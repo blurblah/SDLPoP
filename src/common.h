@@ -40,6 +40,7 @@ extern "C" {
 
 #ifndef _MSC_VER // unistd.h does not exist in the Windows SDK.
 #include <unistd.h>
+#include <strings.h>
 #else
 #ifndef _UNISTD_H
 #define _UNISTD_H    1
