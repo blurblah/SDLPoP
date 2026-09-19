@@ -19,6 +19,7 @@ The authors of this program may be contacted at https://forum.princed.org
 */
 
 #include "common.h"
+#include "eink_frame.h"
 #include <time.h>
 #include <errno.h>
 
@@ -342,6 +343,7 @@ void quit(int exit_code) {
 
 // seg009:0C90
 void restore_stuff() {
+	eink_frame_stop();
 	SDL_Quit();
 }
 
@@ -2650,6 +2652,7 @@ void set_gr_mode(byte grmode) {
 	}
 	init_overlay();
 	init_scaling();
+	eink_frame_init();
 	if (start_fullscreen) {
 		SDL_ShowCursor(SDL_DISABLE);
 	}
@@ -2765,6 +2768,7 @@ void draw_overlay(void) {
 void update_screen() {
 	draw_overlay();
 	SDL_Surface* surface = get_final_surface();
+	eink_frame_offer(surface);
 	init_scaling();
 	if (scaling_type == 1) {
 		// Make "fuzzy pixels" like DOSBox does:

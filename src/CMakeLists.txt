@@ -77,6 +77,7 @@ set(SOURCE_FILES
         replay.c
         lighting.c
         screenshot.c
+        eink_frame.c eink_frame.h
         menu.c
         stb_vorbis.c
         icon.rc
