@@ -2768,7 +2768,7 @@ void draw_overlay(void) {
 void update_screen() {
 	draw_overlay();
 	SDL_Surface* surface = get_final_surface();
-	eink_frame_offer(surface);
+	eink_frame_offer(surface, current_level, drawn_room, !different_room && !need_full_redraw);
 	init_scaling();
 	if (scaling_type == 1) {
 		// Make "fuzzy pixels" like DOSBox does:

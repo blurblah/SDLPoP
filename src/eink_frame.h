@@ -8,7 +8,7 @@
 #endif
 
 void eink_frame_init(void);
-void eink_frame_offer(SDL_Surface *surface);
+void eink_frame_offer(SDL_Surface *surface, int level, int room, int scene_ready);
 void eink_frame_stop(void);
 
 #endif
