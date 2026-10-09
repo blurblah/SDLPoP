@@ -73,7 +73,7 @@ static int checked_rename(const char *from, const char *to) {
         FILE *file = fopen(from, "rb"); char header[96] = {0};
         require(file != NULL, "완성 임시 파일 없음");
         fread(header, 1, sizeof(header)-1, file); fclose(file);
-        require(strstr(header, frame_writes == 1 ? "# eink scene 0 2\n" : "# eink scene 4 6\n") != NULL,
+        require(strstr(header, frame_writes == 1 ? "# eink scene 0 2\n" : "# eink scene 4 0\n# eink mode 1\n") != NULL,
                 "기록 중 RGB와 방 메타데이터의 동기화 불일치");
     }
     return rename(from, to);
@@ -109,7 +109,7 @@ static void fill_surface(SDL_Surface *surface, unsigned seed) {
 static void offer_first(SDL_Surface *surface) {
     // 시작 순간 worker가 잠금을 가진 경우의 합법적인 프레임 생략은 재시도한다.
     for (int attempt = 0; attempt < 3000; ++attempt) {
-        eink_frame_offer(surface, 0, 2, 1);
+        eink_frame_offer(surface, 0, 2, 1, 0);
         SDL_LockMutex(eink.mutex);
         int accepted = eink.sequence != 0 || eink.failure != NULL;
         SDL_UnlockMutex(eink.mutex);
@@ -134,7 +134,7 @@ static void check_previous(const char *path) {
 static void check_final(const char *path, uint64_t sequence, unsigned seed) {
     char header[128];
     int length = snprintf(header, sizeof(header), "P6\n# eink sequence %" PRIu64 "\n", sequence);
-    if (!strcmp(scenario, "scene_latest")) length += snprintf(header + length, sizeof(header) - length, "# eink scene %u %u\n", seed / 25, seed % 24 + 1);
+    if (!strcmp(scenario, "scene_latest")) length += snprintf(header + length, sizeof(header) - length, "# eink scene %u %u\n# eink mode %d\n", seed / 25, seed == 101 ? 0 : seed % 24 + 1, seed == 101);
     length += snprintf(header + length, sizeof(header) - length, "320 200\n255\n");
     FILE *file = fopen(path, "rb");
     require(file != NULL, "완성 파일 없음");
@@ -160,7 +160,7 @@ int main(int argc, char **argv) {
     eink_frame_init();
     if (!strcmp(scenario, "disabled") || !strcmp(scenario, "empty")) {
         require(!eink.thread && !eink.mutex && !eink.pending_pixels, "opt-out에서 객체 생성");
-        eink_frame_offer(NULL, 0, 2, 1);
+        eink_frame_offer(NULL, 0, 2, 1, 0);
         eink_frame_stop();
         require(io_calls == 0, "opt-out에서 I/O 발생");
         check_previous(argv[2]);
@@ -172,9 +172,11 @@ int main(int argc, char **argv) {
         require(surface != NULL, "패딩 있는 RGB24 surface 생성");
         fill_surface(surface, 1);
         if (!strcmp(scenario, "scene_latest")) {
-            eink_frame_offer(surface, 1, 2, 0);
-            eink_frame_offer(surface, 1, 0, 1);
-            eink_frame_offer(surface, 16, 2, 1);
+            eink_frame_offer(surface, 1, 2, 0, 0);
+            eink_frame_offer(surface, 1, 0, 1, 0);
+            eink_frame_offer(surface, 16, 2, 1, 0);
+            eink_frame_offer(surface, 1, 1, 1, 1);
+            eink_frame_offer(surface, 1, 0, 1, 2);
             require(eink.sequence == 0, "미완성/범위 밖 방 수락");
         }
         if ((!strcmp(scenario, "latest") || !strcmp(scenario, "scene_latest"))) {
@@ -186,14 +188,14 @@ int main(int argc, char **argv) {
             check_previous(argv[2]);
             SDL_Thread *locker = SDL_CreateThread(hold_mutex, "eink-lock-test", NULL);
             require(locker && SDL_SemWaitTimeout(lock_held, 3000) == 0, "검증 잠금 획득");
-            eink_frame_offer(surface, 0, 2, 1);
+            eink_frame_offer(surface, 0, 2, 1, 0);
             SDL_SemPost(lock_release);
             SDL_WaitThread(locker, NULL);
             require(eink.sequence == 1, "잠금 중 프레임을 대기하거나 수락함");
             // 파일 기록이 멈춰 있어도 게임의 최신 슬롯 복사는 계속되고 큐는 쌓이지 않는다.
             for (unsigned seed = 2; seed <= 101; ++seed) {
                 fill_surface(surface, seed);
-                eink_frame_offer(surface, seed / 25, seed % 24 + 1, 1);
+                eink_frame_offer(surface, seed / 25, seed == 101 ? 0 : seed % 24 + 1, 1, seed == 101);
             }
             require(eink.pending && eink.pending_sequence == 101, "최신 대기 슬롯 교체 실패");
             check_previous(argv[2]);
@@ -224,7 +226,7 @@ int main(int argc, char **argv) {
         SDL_FreeSurface(surface);
         require(!eink.thread && !eink.mutex && !eink.pending_pixels && !eink.writing_pixels, "종료 자원 해제");
         int previous_io = io_calls;
-        eink_frame_offer(NULL, 0, 2, 1); eink_frame_stop();
+        eink_frame_offer(NULL, 0, 2, 1, 0); eink_frame_stop();
         require(io_calls == previous_io, "종료 후 추가 작업");
     }
     SDL_Quit();

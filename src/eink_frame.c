@@ -17,17 +17,17 @@ static struct {
 	uint8_t *pending_pixels, *writing_pixels;
 	char *path, *temporary_path;
 	uint64_t sequence, pending_sequence;
-	int pending_level, pending_room;
+	int pending_level, pending_room, pending_cutscene;
 	SDL_bool scene_metadata;
 	SDL_bool initialized, pending, stopping;
 	const char *failure;
 } eink;
 
-static int write_frame(const uint8_t *pixels, uint64_t sequence, int level, int room) {
+static int write_frame(const uint8_t *pixels, uint64_t sequence, int level, int room, int cutscene) {
 	FILE *file = fopen(eink.temporary_path, "wb");
 	if (file == NULL) return -1;
 	int ok = fprintf(file, "P6\n# eink sequence %" PRIu64 "\n", sequence) > 0;
-	if (ok && eink.scene_metadata) ok = fprintf(file, "# eink scene %d %d\n", level, room) > 0;
+	if (ok && eink.scene_metadata) ok = fprintf(file, "# eink scene %d %d\n# eink mode %d\n", level, room, cutscene) > 0;
 	if (ok) ok = fputs("320 200\n255\n", file) >= 0;
 	if (ok) ok = fwrite(pixels, 1, EINK_FRAME_BYTES, file) == EINK_FRAME_BYTES;
 	int saved_errno = ok ? 0 : errno;
@@ -62,11 +62,11 @@ static int frame_writer(void *unused) {
 		eink.writing_pixels = eink.pending_pixels;
 		eink.pending_pixels = spare;
 		uint64_t sequence = eink.pending_sequence;
-		int level = eink.pending_level, room = eink.pending_room;
+		int level = eink.pending_level, room = eink.pending_room, cutscene = eink.pending_cutscene;
 		eink.pending = SDL_FALSE;
 		SDL_UnlockMutex(eink.mutex);
 
-		if (write_frame(eink.writing_pixels, sequence, level, room) != 0) {
+		if (write_frame(eink.writing_pixels, sequence, level, room, cutscene) != 0) {
 			SDL_LockMutex(eink.mutex);
 			eink.failure = "PPM 파일 기록 또는 원자 교체 실패";
 			SDL_UnlockMutex(eink.mutex);
@@ -118,9 +118,10 @@ void eink_frame_init(void) {
 	}
 }
 
-void eink_frame_offer(SDL_Surface *surface, int level, int room, int scene_ready) {
+void eink_frame_offer(SDL_Surface *surface, int level, int room, int scene_ready, int cutscene) {
 	// 방 그리기 전의 검정 전환/미완성 화면은 새 방과 함께 기록하지 않는다.
-	if (eink.scene_metadata && (!scene_ready || level < 0 || level > 15 || room < 1 || room > 24)) return;
+	if (eink.scene_metadata && (!scene_ready || level < 0 || level > 15 ||
+	    (cutscene != 0 && cutscene != 1) || (cutscene ? room != 0 : room < 1 || room > 24))) return;
 	if (!eink.thread || SDL_TryLockMutex(eink.mutex) != 0) return;
 	if (eink.stopping || eink.failure) {
 		SDL_UnlockMutex(eink.mutex);
@@ -140,6 +141,7 @@ void eink_frame_offer(SDL_Surface *surface, int level, int room, int scene_ready
 		eink.pending_sequence = ++eink.sequence;
 		eink.pending_level = level;
 		eink.pending_room = room;
+		eink.pending_cutscene = cutscene;
 		eink.pending = SDL_TRUE;
 	}
 	SDL_CondSignal(eink.ready);
